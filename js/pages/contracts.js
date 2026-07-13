@@ -69,7 +69,7 @@ async function renderContracts(container) {
         <thead>
           <tr>
             <th>رقم العقد</th><th>السكن</th><th>المالك</th><th>البداية</th><th>النهاية</th>
-            <th>القيمة الإجمالية</th><th>الحالة</th><th></th>
+            <th>القيمة الإجمالية</th><th>الكهرباء</th><th>الحالة</th><th></th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -85,7 +85,7 @@ async function renderContracts(container) {
 
   const tbody = document.querySelector('#contracts-table tbody');
   if (contracts.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">لسه مفيش عقود.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">لسه مفيش عقود.</td></tr>`;
   } else {
     tbody.innerHTML = contracts.map(c => {
       const isActive = daysBetween(c.endDate) >= 0;
@@ -97,6 +97,7 @@ async function renderContracts(container) {
           <td>${fmtDate(c.startDate)}</td>
           <td>${fmtDate(c.endDate)}</td>
           <td>${fmtMoney(c.totalValue)}</td>
+          <td>${arrangementBadge(c.electricityArrangement)}</td>
           <td>${isActive ? '<span class="badge badge-ok">ساري</span>' : '<span class="badge badge-danger">منتهي</span>'}</td>
           <td class="row-actions">
             <button class="icon-btn" data-gen="${c.id}" title="توليد/تحديث جدول الدفعات">📅</button>
@@ -173,6 +174,10 @@ function openContractForm(residences, contract = null) {
         <select id="f-frequency">${frequencyOptions(contract?.paymentFrequency || 1)}</select>
       </div>
     </div>
+    <div class="form-group">
+      <label>الكهرباء *</label>
+      <select id="f-elec">${electricityArrangementOptions(contract?.electricityArrangement || 'separate')}</select>
+    </div>
     <p class="muted small">تاريخ نهاية العقد هيتحسب تلقائي من تاريخ البداية + المدة.</p>
   `, `
     <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
@@ -199,7 +204,8 @@ function openContractForm(residences, contract = null) {
       durationMonths,
       endDate: addMonths(startDate, durationMonths),
       totalValue,
-      paymentFrequency: Number(document.getElementById('f-frequency').value)
+      paymentFrequency: Number(document.getElementById('f-frequency').value),
+      electricityArrangement: document.getElementById('f-elec').value
     };
 
     if (isEdit) {
