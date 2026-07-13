@@ -36,10 +36,10 @@ const PAYMENT_FREQUENCIES = [
 
 // إعدادات Firebase — استبدل بالقيم الخاصة بمشروعك (من Firebase Console > Project Settings)
 const FIREBASE_CONFIG = {
-  apiKey: "PASTE_YOUR_API_KEY",
-  authDomain: "PASTE_YOUR_PROJECT.firebaseapp.com",
-  projectId: "PASTE_YOUR_PROJECT_ID",
-  storageBucket: "PASTE_YOUR_PROJECT.appspot.com",
-  messagingSenderId: "PASTE_YOUR_SENDER_ID",
-  appId: "PASTE_YOUR_APP_ID"
+  apiKey: "AIzaSyBJb7b5pJ7vCAYnNULG4TcXjKJs-UkxllA",
+  authDomain: "housing-tracker-87679.firebaseapp.com",
+  projectId: "housing-tracker-87679",
+  storageBucket: "housing-tracker-87679.firebasestorage.app",
+  messagingSenderId: "874995055975",
+  appId: "1:874995055975:web:33f495648a50be113c43c2"
 };
