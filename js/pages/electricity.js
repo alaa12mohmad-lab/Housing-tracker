@@ -3,16 +3,22 @@
 // ==========================================================================
 
 async function renderElectricity(container) {
-  const [meters, bills, residences] = await Promise.all([
+  const [meters, bills, residences, contracts] = await Promise.all([
     fetchAll(COL.electricityMeters),
     fetchAll(COL.electricityBills, 'date', true),
-    fetchAll(COL.residences, 'name')
+    fetchAll(COL.residences, 'name'),
+    fetchAll(COL.contracts)
   ]);
 
   const resMap = Object.fromEntries(residences.map(r => [r.id, r.name]));
   meters.forEach(m => m.residenceName = resMap[m.residenceId] || '—');
   const meterMap = Object.fromEntries(meters.map(m => [m.id, m]));
   const payerLabel = Object.fromEntries(PAYER_TYPES.map(p => [p.value, p.label]));
+
+  // العقد الساري (أو الأحدث) لكل سكن — بيحدد مين المفروض يدفع الكهرباء حسب العقد
+  const contractByResidence = Object.fromEntries(
+    residences.map(r => [r.id, getCurrentContract(contracts, r.id)])
+  );
 
   container.innerHTML = `
     <div class="page-head">
@@ -35,7 +41,7 @@ async function renderElectricity(container) {
     </div>
   `;
 
-  document.getElementById('add-meter-btn').onclick = () => openMeterForm(residences, null, COL.electricityMeters, 'electricity');
+  document.getElementById('add-meter-btn').onclick = () => openMeterForm(residences, null, COL.electricityMeters, 'electricity', contractByResidence);
   document.getElementById('add-bill-btn').onclick = () => openBillForm(meters, COL.electricityBills, 'electricity');
 
   const grid = document.getElementById('meters-grid');
@@ -52,11 +58,12 @@ async function renderElectricity(container) {
         </div>
         <p class="muted">رقم العداد: ${esc(m.meterNumber)}</p>
         <p class="notes-line">تدفعها: ${payerLabel[m.payerType] || '—'}</p>
+        <p class="notes-line">حسب العقد: ${arrangementBadge(contractByResidence[m.residenceId]?.electricityArrangement)}</p>
       </div>
     `).join('');
 
   grid.querySelectorAll('[data-edit]').forEach(b => {
-    b.onclick = () => openMeterForm(residences, meters.find(m => m.id === b.dataset.edit), COL.electricityMeters, 'electricity');
+    b.onclick = () => openMeterForm(residences, meters.find(m => m.id === b.dataset.edit), COL.electricityMeters, 'electricity', contractByResidence);
   });
   grid.querySelectorAll('[data-del]').forEach(b => {
     b.onclick = () => confirmDelete('هيتم حذف العداد. سجل الفواتير المرتبط به لن يُحذف تلقائيًا.', async () => {
@@ -92,9 +99,12 @@ async function renderElectricity(container) {
   });
 }
 
-// مشتركة بين الكهرباء والمياه
-function openMeterForm(residences, meter, targetCol, pageKey) {
+// مشتركة بين الكهرباء والمياه — contractByResidence اختياري (بيتفعل بس للكهرباء)
+function openMeterForm(residences, meter, targetCol, pageKey, contractByResidence = null) {
   const isEdit = !!meter;
+  const initialResidenceId = meter?.residenceId || residences[0]?.id;
+  const initialContract = contractByResidence?.[initialResidenceId];
+
   openModal(isEdit ? 'تعديل العداد' : 'عداد جديد', `
     <div class="form-group">
       <label>السكن *</label>
@@ -104,14 +114,30 @@ function openMeterForm(residences, meter, targetCol, pageKey) {
       <label>رقم العداد *</label>
       <input type="text" id="f-meter-number" value="${esc(meter?.meterNumber || '')}">
     </div>
+    ${contractByResidence ? `
+      <p class="muted small" id="elec-arrangement-hint">
+        ${initialContract ? `حسب العقد الحالي: ${arrangementBadge(initialContract.electricityArrangement)}` : 'مفيش عقد مرتبط بالسكن ده حاليًا'}
+      </p>
+    ` : ''}
     <div class="form-group">
       <label>مين المفروض يدفعها *</label>
-      <select id="f-payer">${payerTypeOptions(meter?.payerType || 'company')}</select>
+      <select id="f-payer">${payerTypeOptions(meter?.payerType || (initialContract?.electricityArrangement === 'included' ? 'owner' : 'company'))}</select>
     </div>
   `, `
     <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
     <button class="btn btn-primary" id="save-meter-btn">${isEdit ? 'حفظ التعديل' : 'إضافة'}</button>
   `);
+
+  // لما يغير السكن، حدّث الاقتراح حسب عقد السكن الجديد (بس للكهرباء)
+  if (contractByResidence) {
+    document.getElementById('f-residence').onchange = (e) => {
+      const contract = contractByResidence[e.target.value];
+      document.getElementById('elec-arrangement-hint').innerHTML = contract
+        ? `حسب العقد الحالي: ${arrangementBadge(contract.electricityArrangement)}`
+        : 'مفيش عقد مرتبط بالسكن ده حاليًا';
+      document.getElementById('f-payer').value = contract?.electricityArrangement === 'included' ? 'owner' : 'company';
+    };
+  }
 
   document.getElementById('save-meter-btn').onclick = async () => {
     const residenceId = document.getElementById('f-residence').value;
