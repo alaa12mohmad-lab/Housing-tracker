@@ -74,6 +74,20 @@ function payerTypeOptions(selected = '') {
   return PAYER_TYPES.map(p => `<option value="${p.value}" ${p.value === selected ? 'selected' : ''}>${p.label}</option>`).join('');
 }
 
+function electricityArrangementOptions(selected = '') {
+  return ELECTRICITY_ARRANGEMENTS.map(a => `<option value="${a.value}" ${a.value === selected ? 'selected' : ''}>${a.label}</option>`).join('');
+}
+
+function electricityArrangementLabel(value) {
+  return ELECTRICITY_ARRANGEMENTS.find(a => a.value === value)?.label || '—';
+}
+
+function arrangementBadge(value) {
+  if (value === 'included') return `<span class="badge badge-neutral">داخل الإيجار</span>`;
+  if (value === 'separate') return `<span class="badge badge-warn">خارج العقد</span>`;
+  return `<span class="badge badge-neutral">غير محدد</span>`;
+}
+
 function paymentTypeOptions(selected = '') {
   return PAYMENT_TYPES.map(p => `<option value="${p.value}" ${p.value === selected ? 'selected' : ''}>${p.label}</option>`).join('');
 }
@@ -114,6 +128,15 @@ function computePaymentStatus(payment) {
 // مولّد id بسيط لو احتجنا معرف محلي قبل الحفظ
 function localId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// يختار العقد الساري لسكن معين، ولو مفيش عقد ساري ياخد الأحدث بداية
+function getCurrentContract(contracts, residenceId) {
+  const list = contracts.filter(c => c.residenceId === residenceId);
+  if (list.length === 0) return null;
+  const active = list.filter(c => daysBetween(c.endDate) >= 0);
+  const pool = active.length > 0 ? active : list;
+  return pool.sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''))[0];
 }
 
 // تفريغ نص من مسافات زيادة
