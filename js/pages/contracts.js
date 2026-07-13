@@ -2,6 +2,55 @@
 // صفحة العقود
 // ==========================================================================
 
+// يحسب جدول الأقساط النظري من بيانات العقد (بدون حفظ) — آخر قسط بياخد فرق التقريب
+function computePaymentSchedule(contract) {
+  const installmentCount = Math.max(1, Math.round(contract.durationMonths / contract.paymentFrequency));
+  const baseAmount = Math.floor((contract.totalValue / installmentCount) * 100) / 100;
+
+  const periods = [];
+  let cursor = contract.startDate;
+  let remaining = Math.round(contract.totalValue * 100) / 100;
+
+  for (let i = 0; i < installmentCount; i++) {
+    const periodStart = cursor;
+    const periodEnd = addMonths(periodStart, contract.paymentFrequency);
+    const isLast = i === installmentCount - 1;
+    const amount = isLast ? remaining : baseAmount;
+    remaining = Math.round((remaining - amount) * 100) / 100;
+    periods.push({ periodStart, periodEnd, amount, installmentIndex: i + 1 });
+    cursor = periodEnd;
+  }
+  return periods;
+}
+
+// بيولّد ويحفظ الدفعات الناقصة بس (مايكررش الموجود) — آمن يتنادى أكتر من مرة على نفس العقد
+async function generateContractPaymentSchedule(contract, { silent = false } = {}) {
+  const schedule = computePaymentSchedule(contract);
+  const existing = await fetchWhere(COL.payments, 'contractId', '==', contract.id);
+  const existingStarts = new Set(existing.filter(p => p.type === 'period').map(p => p.periodStart));
+
+  const toCreate = schedule.filter(p => !existingStarts.has(p.periodStart));
+
+  for (const p of toCreate) {
+    await addDoc(COL.payments, {
+      contractId: contract.id,
+      type: 'period',
+      periodStart: p.periodStart,
+      periodEnd: p.periodEnd,
+      amount: p.amount,
+      dueDate: p.periodStart,
+      paidDate: null,
+      paidCompany: null,
+      installmentIndex: p.installmentIndex
+    });
+  }
+
+  if (!silent) {
+    toast(toCreate.length > 0 ? `تم توليد ${toCreate.length} دفعة جديدة` : 'الجدول مكتمل بالفعل، مفيش دفعات جديدة تتضاف');
+  }
+  return toCreate.length;
+}
+
 async function renderContracts(container) {
   const [contracts, residences] = await Promise.all([
     fetchAll(COL.contracts, 'startDate', true),
@@ -50,6 +99,7 @@ async function renderContracts(container) {
           <td>${fmtMoney(c.totalValue)}</td>
           <td>${isActive ? '<span class="badge badge-ok">ساري</span>' : '<span class="badge badge-danger">منتهي</span>'}</td>
           <td class="row-actions">
+            <button class="icon-btn" data-gen="${c.id}" title="توليد/تحديث جدول الدفعات">📅</button>
             <button class="icon-btn" data-edit="${c.id}">✎</button>
             <button class="icon-btn" data-del="${c.id}">🗑</button>
           </td>
@@ -58,6 +108,14 @@ async function renderContracts(container) {
     }).join('');
   }
 
+  tbody.querySelectorAll('[data-gen]').forEach(b => {
+    b.onclick = async () => {
+      const c = contracts.find(c => c.id === b.dataset.gen);
+      b.disabled = true;
+      await generateContractPaymentSchedule(c);
+      b.disabled = false;
+    };
+  });
   tbody.querySelectorAll('[data-edit]').forEach(b => {
     b.onclick = () => openContractForm(residences, contracts.find(c => c.id === b.dataset.edit));
   });
@@ -147,11 +205,14 @@ function openContractForm(residences, contract = null) {
     if (isEdit) {
       await updateDoc(COL.contracts, contract.id, data);
       toast('تم حفظ التعديل');
+      closeModal();
+      navigate('contracts');
     } else {
-      await addDoc(COL.contracts, data);
-      toast('تمت إضافة العقد');
+      const newId = await addDoc(COL.contracts, data);
+      closeModal();
+      navigate('contracts');
+      const count = await generateContractPaymentSchedule({ id: newId, ...data }, { silent: true });
+      toast(`تمت إضافة العقد وتوليد ${count} دفعة تلقائيًا`);
     }
-    closeModal();
-    navigate('contracts');
   };
 }
