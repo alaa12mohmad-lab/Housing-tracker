@@ -10,7 +10,8 @@ const PAGES = {
   payments: { title: 'الدفعات', icon: '💰', render: renderPayments },
   electricity: { title: 'الكهرباء', icon: '⚡', render: renderElectricity },
   water: { title: 'المياه', icon: '💧', render: renderWater },
-  expenses: { title: 'المصاريف', icon: '🧾', render: renderExpenses }
+  expenses: { title: 'المصاريف', icon: '🧾', render: renderExpenses },
+  reports: { title: 'التقارير', icon: '🖨️', render: renderReports }
 };
 
 let currentPage = null;
