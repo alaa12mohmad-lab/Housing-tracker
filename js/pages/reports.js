@@ -98,13 +98,14 @@ function buildStatementHTML({ residence, contracts, payments, elecMeters, elecBi
   const periodTxt = (from || to) ? `${from ? fmtDate(from) : 'البداية'} → ${to ? fmtDate(to) : 'اليوم'}` : 'كل الفترة';
 
   // ---------- العقود ----------
-  const contractsRows = contracts.length === 0 ? `<tr><td colspan="6">لا يوجد عقود لهذا السكن</td></tr>` : contracts.map(c => `
+  const contractsRows = contracts.length === 0 ? `<tr><td colspan="7">لا يوجد عقود لهذا السكن</td></tr>` : contracts.map(c => `
     <tr>
       <td>${esc(c.contractNumber)}</td>
       <td>${esc(c.ownerName || '—')}</td>
       <td>${fmtDate(c.startDate)}</td>
       <td>${fmtDate(c.endDate)}</td>
       <td>${fmtMoney(c.totalValue)}</td>
+      <td>${electricityArrangementLabel(c.electricityArrangement)}</td>
       <td>${daysBetween(c.endDate) >= 0 ? 'ساري' : 'منتهي'}</td>
     </tr>
   `).join('');
@@ -187,7 +188,7 @@ function buildStatementHTML({ residence, contracts, payments, elecMeters, elecBi
 
     <h3>العقود</h3>
     <table class="report-table">
-      <thead><tr><th>رقم العقد</th><th>المالك</th><th>البداية</th><th>النهاية</th><th>القيمة الإجمالية</th><th>الحالة</th></tr></thead>
+      <thead><tr><th>رقم العقد</th><th>المالك</th><th>البداية</th><th>النهاية</th><th>القيمة الإجمالية</th><th>الكهرباء</th><th>الحالة</th></tr></thead>
       <tbody>${contractsRows}</tbody>
     </table>
 
