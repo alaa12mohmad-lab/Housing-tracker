@@ -16,6 +16,7 @@ const ASSETS = [
   './js/pages/electricity.js',
   './js/pages/water.js',
   './js/pages/expenses.js',
+  './js/pages/reports.js',
   './manifest.json'
 ];
 
