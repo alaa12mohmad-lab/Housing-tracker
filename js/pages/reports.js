@@ -71,10 +71,15 @@ async function generateResidenceStatement(residences) {
     return true;
   };
 
-  const payments = allPayments.filter(p => contractIds.includes(p.contractId) && inRange(p.dueDate));
-  const elecBills = allElecBills.filter(b => elecMeterIds.includes(b.meterId) && inRange(b.date));
-  const waterBills = allWaterBills.filter(b => waterMeterIds.includes(b.meterId) && inRange(b.date));
-  const filteredExpenses = expenses.filter(e => inRange(e.date));
+  const payments = allPayments.filter(p => contractIds.includes(p.contractId) && inRange(p.dueDate))
+    .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+  const elecBills = allElecBills.filter(b => elecMeterIds.includes(b.meterId) && inRange(b.date))
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const waterBills = allWaterBills.filter(b => waterMeterIds.includes(b.meterId) && inRange(b.date))
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const filteredExpenses = expenses.filter(e => inRange(e.date))
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  contracts.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
 
   const html = buildStatementHTML({ residence, contracts, payments, elecMeters, elecBills, waterMeters, waterBills, expenses: filteredExpenses, from, to });
 
