@@ -18,12 +18,13 @@ async function renderPayments(container) {
       <h2>الدفعات</h2>
       <button class="btn btn-primary" id="add-payment-btn" ${contracts.length === 0 ? 'disabled title="أضف عقد أولاً"' : ''}>+ دفعة جديدة</button>
     </div>
+    <p class="muted small">الدفعات الدورية بتتولد تلقائي من صفحة "العقود" عند إضافة أو تحديث عقد. استخدم الزرار ده بس لدفعات إضافية (زي دفعة مقدمة/تأمين) أو تعديلات يدوية.</p>
     <div class="table-wrap">
       <table class="data-table" id="payments-table">
         <thead>
           <tr>
             <th>السكن</th><th>رقم العقد</th><th>النوع</th><th>الفترة</th><th>المبلغ</th>
-            <th>الاستحقاق</th><th>الحالة</th><th>دُفعت من</th><th></th>
+            <th>الحالة</th><th>دُفعت من</th><th></th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -39,12 +40,12 @@ async function renderPayments(container) {
 
   const tbody = document.querySelector('#payments-table tbody');
   if (payments.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">لسه مفيش دفعات مسجلة.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">لسه مفيش دفعات مسجلة.</td></tr>`;
   } else {
     tbody.innerHTML = payments.map(p => {
       const c = contractMap[p.contractId] || {};
       const status = computePaymentStatus(p);
-      const periodTxt = p.type === 'advance' ? 'دفعة مقدمة' : `${fmtDate(p.periodStart)} → ${fmtDate(p.periodEnd)}`;
+      const periodTxt = p.type === 'advance' ? `دفعة مقدمة — استحقاق ${fmtDate(p.dueDate)}` : `${fmtDate(p.periodStart)} → ${fmtDate(p.periodEnd)}`;
       return `
         <tr>
           <td>${esc(c.residenceName || '—')}</td>
@@ -52,7 +53,6 @@ async function renderPayments(container) {
           <td>${p.type === 'advance' ? 'مقدمة' : 'عن فترة'}</td>
           <td>${periodTxt}</td>
           <td>${fmtMoney(p.amount)}</td>
-          <td>${fmtDate(p.dueDate)}</td>
           <td>${statusBadge(status)}</td>
           <td>${esc(p.paidCompany || '—')}</td>
           <td class="row-actions">
@@ -95,7 +95,7 @@ function openPaymentForm(contracts, payment = null) {
     </div>
     <div class="form-row" id="period-row" style="${payment?.type === 'advance' ? 'display:none' : ''}">
       <div class="form-group">
-        <label>الفترة من</label>
+        <label>الفترة من *</label>
         <input type="date" id="f-period-start" value="${payment?.periodStart || ''}">
       </div>
       <div class="form-group">
@@ -103,40 +103,48 @@ function openPaymentForm(contracts, payment = null) {
         <input type="date" id="f-period-end" value="${payment?.periodEnd || ''}">
       </div>
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>المبلغ *</label>
-        <input type="number" id="f-amount" min="0" value="${payment?.amount || ''}">
-      </div>
+    <div class="form-row" id="due-row" style="${payment?.type !== 'advance' ? 'display:none' : ''}">
       <div class="form-group">
         <label>تاريخ الاستحقاق *</label>
         <input type="date" id="f-due" value="${payment?.dueDate || todayISO()}">
       </div>
     </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>المبلغ *</label>
+        <input type="number" id="f-amount" min="0" value="${payment?.amount || ''}">
+      </div>
+    </div>
+    <p class="muted small" id="due-hint" style="${payment?.type === 'advance' ? 'display:none' : ''}">تاريخ الاستحقاق هياخد نفس تاريخ بداية الفترة تلقائيًا.</p>
   `, `
     <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
     <button class="btn btn-primary" id="save-payment-btn">${isEdit ? 'حفظ التعديل' : 'إضافة'}</button>
   `);
 
   document.getElementById('f-type').onchange = (e) => {
-    document.getElementById('period-row').style.display = e.target.value === 'advance' ? 'none' : '';
+    const isAdvance = e.target.value === 'advance';
+    document.getElementById('period-row').style.display = isAdvance ? 'none' : '';
+    document.getElementById('due-row').style.display = isAdvance ? '' : 'none';
+    document.getElementById('due-hint').style.display = isAdvance ? 'none' : '';
   };
 
   document.getElementById('save-payment-btn').onclick = async () => {
     const contractId = document.getElementById('f-contract').value;
     const type = document.getElementById('f-type').value;
     const amount = Number(document.getElementById('f-amount').value);
-    const dueDate = document.getElementById('f-due').value;
+    const periodStart = document.getElementById('f-period-start').value;
 
-    if (!contractId || !amount || !dueDate) return toast('استكمل الحقول المطلوبة (*)', 'error');
+    if (!contractId || !amount) return toast('استكمل الحقول المطلوبة (*)', 'error');
+    if (type === 'period' && !periodStart) return toast('حدد تاريخ بداية الفترة', 'error');
+    if (type === 'advance' && !document.getElementById('f-due').value) return toast('حدد تاريخ الاستحقاق', 'error');
 
     const data = {
       contractId,
       type,
-      periodStart: type === 'period' ? document.getElementById('f-period-start').value : null,
+      periodStart: type === 'period' ? periodStart : null,
       periodEnd: type === 'period' ? document.getElementById('f-period-end').value : null,
       amount,
-      dueDate
+      dueDate: type === 'period' ? periodStart : document.getElementById('f-due').value
     };
 
     if (isEdit) {
