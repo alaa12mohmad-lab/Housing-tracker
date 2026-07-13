@@ -1,0 +1,181 @@
+// ==========================================================================
+// صفحة الدفعات
+// ==========================================================================
+
+async function renderPayments(container) {
+  const [payments, contracts, residences] = await Promise.all([
+    fetchAll(COL.payments, 'dueDate'),
+    fetchAll(COL.contracts, 'startDate'),
+    fetchAll(COL.residences, 'name')
+  ]);
+
+  const resMap = Object.fromEntries(residences.map(r => [r.id, r.name]));
+  contracts.forEach(c => c.residenceName = resMap[c.residenceId] || '—');
+  const contractMap = Object.fromEntries(contracts.map(c => [c.id, c]));
+
+  container.innerHTML = `
+    <div class="page-head">
+      <h2>الدفعات</h2>
+      <button class="btn btn-primary" id="add-payment-btn" ${contracts.length === 0 ? 'disabled title="أضف عقد أولاً"' : ''}>+ دفعة جديدة</button>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table" id="payments-table">
+        <thead>
+          <tr>
+            <th>السكن</th><th>رقم العقد</th><th>النوع</th><th>الفترة</th><th>المبلغ</th>
+            <th>الاستحقاق</th><th>الحالة</th><th>دُفعت من</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  `;
+
+  if (contracts.length === 0) {
+    container.querySelector('.table-wrap').innerHTML = `<div class="empty-state">لازم تضيف عقد الأول من صفحة "العقود".</div>`;
+  }
+
+  document.getElementById('add-payment-btn').onclick = () => openPaymentForm(contracts);
+
+  const tbody = document.querySelector('#payments-table tbody');
+  if (payments.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">لسه مفيش دفعات مسجلة.</td></tr>`;
+  } else {
+    tbody.innerHTML = payments.map(p => {
+      const c = contractMap[p.contractId] || {};
+      const status = computePaymentStatus(p);
+      const periodTxt = p.type === 'advance' ? 'دفعة مقدمة' : `${fmtDate(p.periodStart)} → ${fmtDate(p.periodEnd)}`;
+      return `
+        <tr>
+          <td>${esc(c.residenceName || '—')}</td>
+          <td>${esc(c.contractNumber || '—')}</td>
+          <td>${p.type === 'advance' ? 'مقدمة' : 'عن فترة'}</td>
+          <td>${periodTxt}</td>
+          <td>${fmtMoney(p.amount)}</td>
+          <td>${fmtDate(p.dueDate)}</td>
+          <td>${statusBadge(status)}</td>
+          <td>${esc(p.paidCompany || '—')}</td>
+          <td class="row-actions">
+            ${!p.paidDate ? `<button class="btn btn-sm btn-ok" data-pay="${p.id}">تم الدفع</button>` : ''}
+            <button class="icon-btn" data-edit="${p.id}">✎</button>
+            <button class="icon-btn" data-del="${p.id}">🗑</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  tbody.querySelectorAll('[data-edit]').forEach(b => {
+    b.onclick = () => openPaymentForm(contracts, payments.find(p => p.id === b.dataset.edit));
+  });
+  tbody.querySelectorAll('[data-del]').forEach(b => {
+    b.onclick = () => {
+      confirmDelete('هيتم حذف الدفعة نهائيًا.', async () => {
+        await deleteDoc(COL.payments, b.dataset.del);
+        toast('تم حذف الدفعة');
+        navigate('payments');
+      });
+    };
+  });
+  tbody.querySelectorAll('[data-pay]').forEach(b => {
+    b.onclick = () => openMarkPaidForm(payments.find(p => p.id === b.dataset.pay));
+  });
+}
+
+function openPaymentForm(contracts, payment = null) {
+  const isEdit = !!payment;
+  openModal(isEdit ? 'تعديل الدفعة' : 'دفعة جديدة', `
+    <div class="form-group">
+      <label>العقد *</label>
+      <select id="f-contract">${contractOptions(contracts, payment?.contractId)}</select>
+    </div>
+    <div class="form-group">
+      <label>نوع الدفعة *</label>
+      <select id="f-type">${paymentTypeOptions(payment?.type || 'period')}</select>
+    </div>
+    <div class="form-row" id="period-row" style="${payment?.type === 'advance' ? 'display:none' : ''}">
+      <div class="form-group">
+        <label>الفترة من</label>
+        <input type="date" id="f-period-start" value="${payment?.periodStart || ''}">
+      </div>
+      <div class="form-group">
+        <label>الفترة إلى</label>
+        <input type="date" id="f-period-end" value="${payment?.periodEnd || ''}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>المبلغ *</label>
+        <input type="number" id="f-amount" min="0" value="${payment?.amount || ''}">
+      </div>
+      <div class="form-group">
+        <label>تاريخ الاستحقاق *</label>
+        <input type="date" id="f-due" value="${payment?.dueDate || todayISO()}">
+      </div>
+    </div>
+  `, `
+    <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+    <button class="btn btn-primary" id="save-payment-btn">${isEdit ? 'حفظ التعديل' : 'إضافة'}</button>
+  `);
+
+  document.getElementById('f-type').onchange = (e) => {
+    document.getElementById('period-row').style.display = e.target.value === 'advance' ? 'none' : '';
+  };
+
+  document.getElementById('save-payment-btn').onclick = async () => {
+    const contractId = document.getElementById('f-contract').value;
+    const type = document.getElementById('f-type').value;
+    const amount = Number(document.getElementById('f-amount').value);
+    const dueDate = document.getElementById('f-due').value;
+
+    if (!contractId || !amount || !dueDate) return toast('استكمل الحقول المطلوبة (*)', 'error');
+
+    const data = {
+      contractId,
+      type,
+      periodStart: type === 'period' ? document.getElementById('f-period-start').value : null,
+      periodEnd: type === 'period' ? document.getElementById('f-period-end').value : null,
+      amount,
+      dueDate
+    };
+
+    if (isEdit) {
+      await updateDoc(COL.payments, payment.id, data);
+      toast('تم حفظ التعديل');
+    } else {
+      data.paidDate = null;
+      data.paidCompany = null;
+      await addDoc(COL.payments, data);
+      toast('تمت إضافة الدفعة');
+    }
+    closeModal();
+    navigate('payments');
+  };
+}
+
+function openMarkPaidForm(payment) {
+  openModal('تسجيل الدفع', `
+    <div class="form-group">
+      <label>تاريخ الدفع الفعلي *</label>
+      <input type="date" id="f-paid-date" value="${todayISO()}">
+    </div>
+    <div class="form-group">
+      <label>دُفعت من شركة *</label>
+      <select id="f-paid-company">${companyOptions()}</select>
+    </div>
+  `, `
+    <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+    <button class="btn btn-primary" id="confirm-paid-btn">تأكيد الدفع</button>
+  `);
+
+  document.getElementById('confirm-paid-btn').onclick = async () => {
+    const paidDate = document.getElementById('f-paid-date').value;
+    const paidCompany = document.getElementById('f-paid-company').value;
+    if (!paidDate || !paidCompany) return toast('استكمل الحقول المطلوبة', 'error');
+
+    await updateDoc(COL.payments, payment.id, { paidDate, paidCompany });
+    toast('تم تسجيل الدفع');
+    closeModal();
+    navigate('payments');
+  };
+}
