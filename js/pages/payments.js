@@ -19,6 +19,28 @@ async function renderPayments(container) {
       <button class="btn btn-primary" id="add-payment-btn" ${contracts.length === 0 ? 'disabled title="أضف عقد أولاً"' : ''}>+ دفعة جديدة</button>
     </div>
     <p class="muted small">الدفعات الدورية بتتولد تلقائي من صفحة "العقود" عند إضافة أو تحديث عقد. استخدم الزرار ده بس لدفعات إضافية (زي دفعة مقدمة/تأمين) أو تعديلات يدوية.</p>
+
+    <div class="filter-bar">
+      <div class="form-group">
+        <label>فلترة حسب السكن</label>
+        <select id="filter-residence">
+          <option value="">كل المساكن</option>
+          ${residences.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>فلترة حسب الحالة</label>
+        <select id="filter-status">
+          <option value="">كل الحالات</option>
+          <option value="overdue">متأخرة</option>
+          <option value="upcoming">قريبة</option>
+          <option value="pending">قادمة</option>
+          <option value="paid">مدفوعة</option>
+        </select>
+      </div>
+      <span class="filter-count" id="filter-count"></span>
+    </div>
+
     <div class="table-wrap">
       <table class="data-table" id="payments-table">
         <thead>
@@ -34,52 +56,74 @@ async function renderPayments(container) {
 
   if (contracts.length === 0) {
     container.querySelector('.table-wrap').innerHTML = `<div class="empty-state">لازم تضيف عقد الأول من صفحة "العقود".</div>`;
+    return;
   }
 
   document.getElementById('add-payment-btn').onclick = () => openPaymentForm(contracts);
 
   const tbody = document.querySelector('#payments-table tbody');
-  if (payments.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">لسه مفيش دفعات مسجلة.</td></tr>`;
-  } else {
-    tbody.innerHTML = payments.map(p => {
+  const countEl = document.getElementById('filter-count');
+
+  function renderRows() {
+    const residenceFilter = document.getElementById('filter-residence').value;
+    const statusFilter = document.getElementById('filter-status').value;
+
+    const filtered = payments.filter(p => {
       const c = contractMap[p.contractId] || {};
-      const status = computePaymentStatus(p);
-      const periodTxt = p.type === 'advance' ? `دفعة مقدمة — استحقاق ${fmtDate(p.dueDate)}` : `${fmtDate(p.periodStart)} → ${fmtDate(p.periodEnd)}`;
-      return `
-        <tr>
-          <td>${esc(c.residenceName || '—')}</td>
-          <td>${esc(c.contractNumber || '—')}</td>
-          <td>${p.type === 'advance' ? 'مقدمة' : 'عن فترة'}</td>
-          <td>${periodTxt}</td>
-          <td>${fmtMoney(p.amount)}</td>
-          <td>${statusBadge(status)}</td>
-          <td>${esc(p.paidCompany || '—')}</td>
-          <td class="row-actions">
-            ${!p.paidDate ? `<button class="btn btn-sm btn-ok" data-pay="${p.id}">تم الدفع</button>` : ''}
-            <button class="icon-btn" data-edit="${p.id}">✎</button>
-            <button class="icon-btn" data-del="${p.id}">🗑</button>
-          </td>
-        </tr>
-      `;
-    }).join('');
+      if (residenceFilter && c.residenceId !== residenceFilter) return false;
+      if (statusFilter && computePaymentStatus(p) !== statusFilter) return false;
+      return true;
+    });
+
+    countEl.textContent = `${filtered.length} من ${payments.length} دفعة`;
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-state">مفيش دفعات مطابقة للفلتر.</td></tr>`;
+    } else {
+      tbody.innerHTML = filtered.map(p => {
+        const c = contractMap[p.contractId] || {};
+        const status = computePaymentStatus(p);
+        const periodTxt = p.type === 'advance' ? `دفعة مقدمة — استحقاق ${fmtDate(p.dueDate)}` : `${fmtDate(p.periodStart)} → ${fmtDate(p.periodEnd)}`;
+        return `
+          <tr>
+            <td>${esc(c.residenceName || '—')}</td>
+            <td>${esc(c.contractNumber || '—')}</td>
+            <td>${p.type === 'advance' ? 'مقدمة' : 'عن فترة'}</td>
+            <td>${periodTxt}</td>
+            <td>${fmtMoney(p.amount)}</td>
+            <td>${statusBadge(status)}</td>
+            <td>${esc(p.paidCompany || '—')}</td>
+            <td class="row-actions">
+              ${!p.paidDate ? `<button class="btn btn-sm btn-ok" data-pay="${p.id}">تم الدفع</button>` : ''}
+              <button class="icon-btn" data-edit="${p.id}">✎</button>
+              <button class="icon-btn" data-del="${p.id}">🗑</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    tbody.querySelectorAll('[data-edit]').forEach(b => {
+      b.onclick = () => openPaymentForm(contracts, payments.find(p => p.id === b.dataset.edit));
+    });
+    tbody.querySelectorAll('[data-del]').forEach(b => {
+      b.onclick = () => {
+        confirmDelete('هيتم حذف الدفعة نهائيًا.', async () => {
+          await deleteDoc(COL.payments, b.dataset.del);
+          toast('تم حذف الدفعة');
+          navigate('payments');
+        });
+      };
+    });
+    tbody.querySelectorAll('[data-pay]').forEach(b => {
+      b.onclick = () => openMarkPaidForm(payments.find(p => p.id === b.dataset.pay));
+    });
   }
 
-  tbody.querySelectorAll('[data-edit]').forEach(b => {
-    b.onclick = () => openPaymentForm(contracts, payments.find(p => p.id === b.dataset.edit));
-  });
-  tbody.querySelectorAll('[data-del]').forEach(b => {
-    b.onclick = () => {
-      confirmDelete('هيتم حذف الدفعة نهائيًا.', async () => {
-        await deleteDoc(COL.payments, b.dataset.del);
-        toast('تم حذف الدفعة');
-        navigate('payments');
-      });
-    };
-  });
-  tbody.querySelectorAll('[data-pay]').forEach(b => {
-    b.onclick = () => openMarkPaidForm(payments.find(p => p.id === b.dataset.pay));
-  });
+  document.getElementById('filter-residence').onchange = renderRows;
+  document.getElementById('filter-status').onchange = renderRows;
+
+  renderRows();
 }
 
 function openPaymentForm(contracts, payment = null) {
